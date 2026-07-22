@@ -1,0 +1,93 @@
+---
+# nginx sirviendo una página por HTTPS con certificado autofirmado, y
+# redirección de HTTP a HTTPS. Corre sobre web01. Se valida con nginx -t y curl.
+
+- name: Instalar nginx y openssl
+  ansible.builtin.apt:
+    name:
+      - nginx
+      - openssl
+    state: present
+    update_cache: true
+
+- name: Directorio para el certificado
+  ansible.builtin.file:
+    path: /etc/nginx/ssl
+    state: directory
+    mode: "0755"
+
+- name: Generar certificado autofirmado (si no existe)
+  ansible.builtin.command: >
+    openssl req -x509 -nodes -days 825 -newkey rsa:2048
+    -keyout /etc/nginx/ssl/web01.key
+    -out /etc/nginx/ssl/web01.crt
+    -subj "/C=ES/ST=Almeria/L=Almeria/O=infra.lab/CN=web01.infra.lab"
+  args:
+    creates: /etc/nginx/ssl/web01.crt
+
+- name: Página de inicio del lab
+  ansible.builtin.copy:
+    dest: /var/www/html/index.html
+    mode: "0644"
+    content: |
+      <!doctype html>
+      <html lang="es">
+      <head><meta charset="utf-8"><title>web01 · infra.lab</title></head>
+      <body style="font-family:system-ui,sans-serif;max-width:40rem;margin:4rem auto;line-height:1.5">
+        <h1>web01.infra.lab</h1>
+        <p>Servidor web del lab, servido por <strong>nginx sobre HTTPS</strong>.</p>
+        <p>Aprovisionado por Ansible · host {{ inventory_hostname }}
+           ({{ ansible_default_ipv4.address | default('10.10.10.12') }}).</p>
+      </body>
+      </html>
+
+- name: Configurar el sitio nginx (HTTPS + redirección desde HTTP)
+  ansible.builtin.copy:
+    dest: /etc/nginx/sites-available/default
+    mode: "0644"
+    content: |
+      server {
+          listen 80 default_server;
+          server_name web01.infra.lab;
+          return 301 https://$host$request_uri;
+      }
+
+      server {
+          listen 443 ssl default_server;
+          server_name web01.infra.lab;
+
+          ssl_certificate     /etc/nginx/ssl/web01.crt;
+          ssl_certificate_key /etc/nginx/ssl/web01.key;
+
+          root /var/www/html;
+          index index.html;
+      }
+  register: nginx_site
+
+- name: Validar la configuración de nginx
+  ansible.builtin.command: nginx -t
+  changed_when: false
+
+- name: nginx arrancado y habilitado al inicio
+  ansible.builtin.service:
+    name: nginx
+    state: started
+    enabled: true
+
+- name: Reiniciar nginx si cambió la configuración
+  ansible.builtin.service:
+    name: nginx
+    state: restarted
+  when: nginx_site.changed
+
+- name: Verificar HTTPS localmente (la página responde)
+  ansible.builtin.command: curl -sk https://localhost/
+  register: web_check
+  changed_when: false
+  failed_when: "'web01.infra.lab' not in web_check.stdout"
+
+- name: Verificar que HTTP redirige a HTTPS (301)
+  ansible.builtin.command: curl -s -o /dev/null -w "%{http_code}" http://localhost/
+  register: web_redirect
+  changed_when: false
+  failed_when: web_redirect.stdout != "301"

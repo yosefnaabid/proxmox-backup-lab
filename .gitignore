@@ -1,0 +1,15 @@
+# Secretos - NUNCA subir
+ansible/group_vars/all/secrets.yml
+*.secret
+
+# Ansible
+*.retry
+*.log
+
+# Im??genes descargadas (se bajan en el nodo, no van al repo)
+*.qcow2
+*.img
+
+# SO
+.DS_Store
+Thumbs.db

@@ -1,0 +1,23 @@
+---
+# Ansible corre en el propio nodo Proxmox (pve01). El grupo proxmox se
+# gestiona en local; las VMs del lab por SSH una vez creadas por cloud-init.
+all:
+  children:
+    proxmox:
+      hosts:
+        pve01:
+          ansible_connection: local
+          ansible_host: 127.0.0.1
+
+    lab_vms:
+      hosts:
+        dns01:
+          ansible_host: 10.10.10.11
+        web01:
+          ansible_host: 10.10.10.12
+        fs01:
+          ansible_host: 10.10.10.13
+      vars:
+        ansible_user: labadmin
+        ansible_ssh_private_key_file: /root/.ssh/id_lab
+        ansible_ssh_common_args: '-o StrictHostKeyChecking=accept-new'

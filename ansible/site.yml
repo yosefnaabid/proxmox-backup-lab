@@ -1,0 +1,70 @@
+---
+# ===========================================================================
+# Playbook maestro. Orquesta el lab por capas. Cada capa se puede lanzar
+# sola con --tags (network, template, vms, services, backup).
+# ===========================================================================
+
+- name: "Capa 0 · Red interna del Proxmox (vmbr1 + NAT)"
+  hosts: proxmox
+  gather_facts: false
+  roles:
+    - role: proxmox_network
+      tags: [network]
+
+- name: "Capa 1a · Plantilla cloud-init de Debian"
+  hosts: proxmox
+  gather_facts: false
+  roles:
+    - role: vm_template
+      tags: [template]
+
+- name: "Capa 1b · Crear las VMs del lab (clonado por código)"
+  hosts: proxmox
+  gather_facts: false
+  roles:
+    - role: vms
+      tags: [vms]
+
+- name: "Capa 2 · DNS interno (bind9 autoritativo para infra.lab)"
+  hosts: dns01
+  become: true
+  roles:
+    - role: dns
+      tags: [services, dns]
+
+- name: "Capa 2 · Servidor web (nginx + HTTPS)"
+  hosts: web01
+  become: true
+  roles:
+    - role: web
+      tags: [services, web]
+
+- name: "Capa 2 · Servidor de ficheros (Samba)"
+  hosts: fs01
+  become: true
+  roles:
+    - role: fileserver
+      tags: [services, fileserver]
+
+- name: "Capa 2 · Apuntar las VMs al DNS interno (dns01)"
+  hosts: lab_vms
+  become: true
+  tags: [services, dns_clients]
+  tasks:
+    - name: /etc/resolv.conf -> dns01 (resolución por nombre entre servicios)
+      ansible.builtin.copy:
+        dest: /etc/resolv.conf
+        mode: "0644"
+        content: |
+          search infra.lab
+          nameserver {{ lab_dns }}
+
+- name: "Capa 3 · Backups de las VMs (vzdump programado + retención)"
+  hosts: proxmox
+  gather_facts: false
+  roles:
+    - role: backup
+      tags: [backup]
+
+# Capa 4 (desastre + restauración verificada) se hace con los scripts de
+# scripts/ y el runbook, no desde site.yml (es una operación puntual).

@@ -1,0 +1,52 @@
+---
+# Crea una plantilla cloud-init de Debian 13 (vmid 9000) a partir de la imagen
+# oficial "genericcloud". Idempotente: si la plantilla ya existe, no hace nada.
+
+- name: Comprobar si la plantilla ya existe
+  ansible.builtin.command: qm status {{ template_vmid }}
+  register: tmpl_status
+  changed_when: false
+  failed_when: false
+
+- name: Construir la plantilla (solo si no existe)
+  when: tmpl_status.rc != 0
+  block:
+    - name: Descargar la imagen cloud de Debian 13
+      ansible.builtin.get_url:
+        url: "{{ debian_cloud_image_url }}"
+        dest: "/root/{{ debian_cloud_image_url | basename }}"
+        mode: "0644"
+        force: false
+
+    - name: Crear la VM base
+      ansible.builtin.command: >
+        qm create {{ template_vmid }}
+        --name {{ template_name }}
+        --memory 1024 --cores 1 --cpu host
+        --net0 virtio,bridge={{ lab_bridge }}
+        --scsihw virtio-scsi-single
+        --serial0 socket --vga serial0
+        --agent enabled=1
+        --ostype l26
+      changed_when: true
+
+    - name: Importar el disco de la imagen cloud a scsi0
+      ansible.builtin.command: >
+        qm set {{ template_vmid }}
+        --scsi0 {{ vm_storage }}:0,import-from=/root/{{ debian_cloud_image_url | basename }}
+      changed_when: true
+
+    - name: Ampliar el disco a 10G
+      ansible.builtin.command: qm resize {{ template_vmid }} scsi0 10G
+      changed_when: true
+
+    - name: Añadir el disco cloud-init y el orden de arranque
+      ansible.builtin.command: >
+        qm set {{ template_vmid }}
+        --ide2 {{ vm_storage }}:cloudinit
+        --boot order=scsi0
+      changed_when: true
+
+    - name: Convertir la VM en plantilla
+      ansible.builtin.command: qm template {{ template_vmid }}
+      changed_when: true

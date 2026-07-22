@@ -1,0 +1,38 @@
+---
+# ---------------------------------------------------------------------------
+# Configuración central del lab. Aquí se define QUÉ se construye y QUÉ se
+# respalda; los roles no llevan datos fijos, todo sale de aquí.
+# ---------------------------------------------------------------------------
+
+# --- Proxmox / API ---------------------------------------------------------
+pve_node: pve01
+pve_api_host: "127.0.0.1"          # Ansible corre en el propio nodo
+pve_api_validate_certs: false
+# pve_api_token_id y pve_api_token_secret viven en secrets.yml (fuera de git)
+
+# --- Red interna del lab (aislada, con NAT en Proxmox) ---------------------
+lab_bridge: vmbr1
+lab_network_cidr: "10.10.10.0/24"
+lab_gateway: "10.10.10.1"          # la IP del propio Proxmox en vmbr1
+lab_dns: "10.10.10.11"             # el DNS interno (dns01); 1.1.1.1 en bootstrap
+
+# --- Plantilla cloud-init --------------------------------------------------
+template_vmid: 9000
+template_name: debian13-cloudinit
+debian_cloud_image_url: "https://cloud.debian.org/images/cloud/trixie/latest/debian-13-genericcloud-amd64.qcow2"
+vm_storage: local-lvm             # disco de las VMs (thin pool)
+snippets_storage: local           # para los ficheros de cloud-init
+
+# --- Usuario que cloud-init crea en cada VM --------------------------------
+vm_user: labadmin
+
+# --- Las VMs del lab (capa 1) ----------------------------------------------
+lab_vms:
+  - { name: dns01, vmid: 111, ip: 10.10.10.11, cores: 1, memory: 1024, role: dns }
+  - { name: web01, vmid: 112, ip: 10.10.10.12, cores: 1, memory: 1024, role: web }
+  - { name: fs01,  vmid: 113, ip: 10.10.10.13, cores: 1, memory: 1024, role: fileserver }
+
+# --- Backups (capa 3) ------------------------------------------------------
+backup_storage: local
+backup_keep_daily: 3
+backup_keep_weekly: 2
