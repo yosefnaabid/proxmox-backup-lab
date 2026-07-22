@@ -1,0 +1,32 @@
+---
+# Crea una VM (clon de la plantilla) a partir de la entrada 'vm' del bucle.
+
+- name: "{{ vm.name }} · ¿existe ya?"
+  ansible.builtin.command: qm status {{ vm.vmid }}
+  register: vm_status
+  changed_when: false
+  failed_when: false
+
+- name: "{{ vm.name }} · clonar la plantilla (full clone)"
+  ansible.builtin.command: >
+    qm clone {{ template_vmid }} {{ vm.vmid }}
+    --name {{ vm.name }} --full
+  when: vm_status.rc != 0
+  changed_when: true
+
+- name: "{{ vm.name }} · configurar cloud-init (usuario, clave, IP, recursos)"
+  ansible.builtin.command: >
+    qm set {{ vm.vmid }}
+    --ciuser {{ vm_user }}
+    --sshkeys /root/.ssh/id_lab.pub
+    --ipconfig0 ip={{ vm.ip }}/24,gw={{ lab_gateway }}
+    --nameserver 1.1.1.1
+    --memory {{ vm.memory }}
+    --cores {{ vm.cores }}
+  when: vm_status.rc != 0
+  changed_when: true
+
+- name: "{{ vm.name }} · arrancar"
+  ansible.builtin.command: qm start {{ vm.vmid }}
+  when: vm_status.rc != 0
+  changed_when: true

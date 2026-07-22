@@ -1,0 +1,66 @@
+---
+# Backups a nivel de VM completa con el sistema nativo de Proxmox (vzdump):
+# un job programado con retención y un primer backup para dejar constancia de
+# que funciona. Es lo que se usaría en producción.
+
+- name: Comprobar que el almacenamiento admite backups
+  ansible.builtin.command: pvesm status --storage {{ backup_storage }}
+  changed_when: false
+
+- name: Ver los jobs de backup ya definidos
+  ansible.builtin.command: pvesh get /cluster/backup --output-format json
+  register: backup_jobs
+  changed_when: false
+
+- name: Localizar el job de backup del lab (si ya existe)
+  ansible.builtin.set_fact:
+    lab_backup_job: "{{ (backup_jobs.stdout | from_json | selectattr('comment', 'equalto', 'backup-lab (Ansible)') | list | first) | default({}) }}"
+
+- name: Crear el job de backup programado (diario 02:00, con retención)
+  ansible.builtin.command: >
+    pvesh create /cluster/backup
+    --schedule "02:00"
+    --storage {{ backup_storage }}
+    --mode snapshot
+    --compress zstd
+    --vmid {{ lab_vms | map(attribute='vmid') | join(',') }}
+    --prune-backups keep-daily={{ backup_keep_daily }},keep-weekly={{ backup_keep_weekly }}
+    --enabled 1
+    --comment "backup-lab (Ansible)"
+  when: lab_backup_job | length == 0
+  changed_when: true
+
+# Un desastre con 'qm destroy --purge' saca la VM del job. Esta tarea garantiza
+# que el job siempre cubre TODAS las VMs del lab (se autorrepara al relanzar).
+- name: Asegurar que el job cubre todas las VMs del lab
+  ansible.builtin.command: >
+    pvesh set /cluster/backup/{{ lab_backup_job.id }}
+    --vmid {{ lab_vms | map(attribute='vmid') | join(',') }}
+  when:
+    - lab_backup_job | length > 0
+    - lab_backup_job.vmid | default('') != (lab_vms | map(attribute='vmid') | join(','))
+  changed_when: true
+
+- name: Ver los backups ya existentes de las VMs del lab
+  ansible.builtin.command: pvesm list {{ backup_storage }} --content backup
+  register: existing_backups
+  changed_when: false
+
+- name: Primer backup de las VMs del lab (solo si aún no hay ninguno)
+  ansible.builtin.command: >
+    vzdump {{ lab_vms | map(attribute='vmid') | join(' ') }}
+    --storage {{ backup_storage }}
+    --mode snapshot
+    --compress zstd
+    --prune-backups keep-daily={{ backup_keep_daily }},keep-weekly={{ backup_keep_weekly }}
+  when: existing_backups.stdout is not search('vzdump-qemu-' ~ lab_vms[0].vmid)
+  changed_when: true
+
+- name: Listar los backups resultantes
+  ansible.builtin.command: pvesm list {{ backup_storage }} --content backup
+  register: backups_after
+  changed_when: false
+
+- name: Mostrar los backups disponibles
+  ansible.builtin.debug:
+    var: backups_after.stdout_lines

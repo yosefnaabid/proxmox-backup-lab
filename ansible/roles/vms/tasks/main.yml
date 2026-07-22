@@ -1,0 +1,15 @@
+---
+# Crea las VMs del lab clonando la plantilla cloud-init. Cada VM recibe por
+# código su IP, usuario y clave SSH. Idempotente: no toca las que ya existen.
+
+- name: Generar la clave SSH del lab (para que Ansible entre en las VMs)
+  ansible.builtin.command: ssh-keygen -t ed25519 -f /root/.ssh/id_lab -N "" -C "ansible-lab"
+  args:
+    creates: /root/.ssh/id_lab
+
+- name: Crear cada VM del lab
+  ansible.builtin.include_tasks: create_vm.yml
+  loop: "{{ lab_vms }}"
+  loop_control:
+    loop_var: vm
+    label: "{{ vm.name }} ({{ vm.ip }})"

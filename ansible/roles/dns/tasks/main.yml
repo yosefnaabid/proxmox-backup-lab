@@ -1,0 +1,106 @@
+---
+# bind9 autoritativo para la zona interna infra.lab + reenvío a internet.
+# Corre sobre dns01. Se valida con named-checkconf/zone y dig antes de darlo
+# por bueno.
+
+- name: Instalar bind9
+  ansible.builtin.apt:
+    name:
+      - bind9
+      - bind9-dnsutils
+    state: present
+    update_cache: true
+
+- name: Opciones globales (recursión + forwarders a internet)
+  ansible.builtin.copy:
+    dest: /etc/bind/named.conf.options
+    owner: root
+    group: bind
+    mode: "0644"
+    content: |
+      options {
+          directory "/var/cache/bind";
+
+          recursion yes;
+          allow-query { localhost; {{ lab_network_cidr }}; };
+
+          forwarders {
+              1.1.1.1;
+              8.8.8.8;
+          };
+          forward only;
+
+          dnssec-validation no;
+
+          listen-on { any; };
+          listen-on-v6 { none; };
+      };
+  register: cfg_options
+
+- name: Declarar la zona infra.lab
+  ansible.builtin.copy:
+    dest: /etc/bind/named.conf.local
+    owner: root
+    group: bind
+    mode: "0644"
+    content: |
+      zone "infra.lab" {
+          type master;
+          file "/etc/bind/db.infra.lab";
+      };
+  register: cfg_local
+
+- name: Fichero de zona directa (registros A generados desde group_vars)
+  ansible.builtin.copy:
+    dest: /etc/bind/db.infra.lab
+    owner: root
+    group: bind
+    mode: "0644"
+    content: |
+      $TTL 604800
+      @       IN      SOA     dns01.infra.lab. admin.infra.lab. (
+                              2026072001 ; Serial
+                              604800     ; Refresh
+                              86400      ; Retry
+                              2419200    ; Expire
+                              604800 )   ; Negative Cache TTL
+      ;
+      @       IN      NS      dns01.infra.lab.
+      ;
+      pve01   IN      A       {{ lab_gateway }}
+      {% for h in lab_vms %}
+      {{ '%-7s' | format(h.name) }} IN      A       {{ h.ip }}
+      {% endfor %}
+  register: cfg_zone
+
+- name: Validar configuración de bind
+  ansible.builtin.command: named-checkconf
+  changed_when: false
+
+- name: Validar la zona infra.lab
+  ansible.builtin.command: named-checkzone infra.lab /etc/bind/db.infra.lab
+  changed_when: false
+
+- name: Asegurar bind9 arrancado y habilitado al inicio
+  ansible.builtin.service:
+    name: named
+    state: started
+    enabled: true
+
+- name: Reiniciar bind9 si cambió la configuración
+  ansible.builtin.service:
+    name: named
+    state: restarted
+  when: cfg_options.changed or cfg_local.changed or cfg_zone.changed
+
+- name: Verificar resolución interna (fs01.infra.lab -> 10.10.10.13)
+  ansible.builtin.command: dig +short @127.0.0.1 fs01.infra.lab
+  register: dig_internal
+  changed_when: false
+  failed_when: "'10.10.10.13' not in dig_internal.stdout"
+
+- name: Verificar reenvío a internet (debian.org resuelve)
+  ansible.builtin.command: dig +short @127.0.0.1 debian.org
+  register: dig_external
+  changed_when: false
+  failed_when: dig_external.stdout | trim == ""

@@ -1,0 +1,44 @@
+---
+# Crea un bridge interno aislado (vmbr1) para las VMs del lab y le da salida
+# a internet con NAT (masquerade) por vmbr0. Idempotente: solo recarga la red
+# si el fichero de interfaces cambia, para no cortar la sesión SSH del nodo.
+
+- name: Habilitar IP forwarding de forma persistente
+  ansible.builtin.copy:
+    dest: /etc/sysctl.d/99-lab-forward.conf
+    content: "net.ipv4.ip_forward = 1\n"
+    owner: root
+    group: root
+    mode: "0644"
+  register: sysctl_file
+
+- name: Aplicar sysctl si cambió
+  ansible.builtin.command: sysctl --system
+  when: sysctl_file.changed
+  changed_when: false
+
+- name: Definir el bridge vmbr1 con NAT en /etc/network/interfaces
+  ansible.builtin.blockinfile:
+    path: /etc/network/interfaces
+    marker: "# {mark} LAB vmbr1 (gestionado por Ansible)"
+    block: |
+      auto {{ lab_bridge }}
+      iface {{ lab_bridge }} inet static
+          address {{ lab_gateway }}/24
+          bridge-ports none
+          bridge-stp off
+          bridge-fd 0
+          post-up   iptables -t nat -A POSTROUTING -s {{ lab_network_cidr }} -o vmbr0 -j MASQUERADE
+          post-down iptables -t nat -D POSTROUTING -s {{ lab_network_cidr }} -o vmbr0 -j MASQUERADE
+  register: iface_block
+
+- name: Recargar la red si cambió (ifupdown2, no corta vmbr0)
+  ansible.builtin.command: ifreload -a
+  when: iface_block.changed
+  changed_when: false
+
+- name: Comprobar que vmbr1 está levantado con su IP
+  ansible.builtin.command: ip -4 addr show {{ lab_bridge }}
+  register: vmbr1_check
+  changed_when: false
+  failed_when: lab_gateway not in vmbr1_check.stdout

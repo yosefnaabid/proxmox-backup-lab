@@ -1,0 +1,91 @@
+---
+# Samba en fs01: un recurso 'datos' con autenticación de usuario y ficheros de
+# ejemplo. Esos ficheros son la "prueba de vida" del escenario de restauración
+# (capa 4): tras restaurar la VM deben seguir intactos.
+
+- name: Instalar samba y cliente
+  ansible.builtin.apt:
+    name:
+      - samba
+      - smbclient
+    state: present
+    update_cache: true
+
+- name: Directorio de datos compartido
+  ansible.builtin.file:
+    path: /srv/samba/datos
+    state: directory
+    owner: "{{ vm_user }}"
+    group: "{{ vm_user }}"
+    mode: "0775"
+
+- name: Datos de usuario de ejemplo (deben sobrevivir a la restauración)
+  ansible.builtin.copy:
+    dest: /srv/samba/datos/IMPORTANTE.txt
+    owner: "{{ vm_user }}"
+    group: "{{ vm_user }}"
+    mode: "0664"
+    content: |
+      Documento crítico del usuario — fs01.infra.lab
+      Este fichero debe seguir intacto tras restaurar la VM desde backup (capa 4).
+      Aprovisionado por Ansible.
+
+- name: Configurar smb.conf con el recurso 'datos'
+  ansible.builtin.copy:
+    dest: /etc/samba/smb.conf
+    mode: "0644"
+    content: |
+      [global]
+         workgroup = INFRALAB
+         server string = fs01 (lab de infraestructura)
+         security = user
+         map to guest = never
+         log file = /var/log/samba/log.%m
+         max log size = 1000
+
+      [datos]
+         path = /srv/samba/datos
+         browseable = yes
+         read only = no
+         valid users = {{ vm_user }}
+         create mask = 0664
+         directory mask = 0775
+  register: smb_conf
+
+- name: Validar smb.conf
+  ansible.builtin.command: testparm -s
+  changed_when: false
+
+- name: Comprobar si el usuario samba ya existe
+  ansible.builtin.shell: "pdbedit -L | grep -q '^{{ vm_user }}:'"
+  register: smb_user_exists
+  changed_when: false
+  failed_when: false
+
+- name: Crear el usuario samba con contraseña
+  ansible.builtin.shell: >
+    printf '%s\n%s\n' '{{ samba_password }}' '{{ samba_password }}'
+    | smbpasswd -a -s {{ vm_user }}
+  when: smb_user_exists.rc != 0
+  no_log: true
+
+- name: smbd arrancado y habilitado al inicio
+  ansible.builtin.service:
+    name: smbd
+    state: started
+    enabled: true
+
+- name: Reiniciar smbd si cambió la configuración
+  ansible.builtin.service:
+    name: smbd
+    state: restarted
+  when: smb_conf.changed
+
+- name: Verificar que el recurso 'datos' se publica
+  ansible.builtin.shell: >
+    smbclient -L localhost -U '{{ vm_user }}%{{ samba_password }}' 2>/dev/null
+    | grep -q datos
+  register: smb_check
+  changed_when: false
+  failed_when: smb_check.rc != 0
+  no_log: true
