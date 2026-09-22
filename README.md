@@ -1,39 +1,23 @@
 # proxmox-backup-lab
 
-Lab de infraestructura sobre Proxmox VE: Ansible administra el hipervisor,
-crea las VMs por código, aprovisiona servicios Linux y los respalda con
-`vzdump`. Y lo principal: provoca un desastre y comprueba que los datos
-sobreviven a la restauración.
+Lab de infraestructura sobre Proxmox VE. Ansible administra el hipervisor por
+su API, crea las VMs por código, aprovisiona tres servicios Linux que se hablan
+entre sí y los respalda con `vzdump`, a nivel de VM completa. Después se
+provoca un desastre y se comprueba que los datos sobreviven a la restauración.
 
-No es "levantar unas VMs con Vagrant". Aquí se administra un hipervisor por su
-API y se demuestra un ciclo de backup y restauración de principio a fin.
+El lab se centra en la parte operativa: qué pasa cuando una máquina se cae y
+cómo se recupera sin perder datos. Todo el ciclo de vida (red, VMs, servicios,
+backups) está en Ansible y es idempotente. La recuperación está en dos scripts
+y un runbook.
 
 ## Índice
 
-- [El problema](#el-problema)
-- [La solución](#la-solución)
 - [Arquitectura](#arquitectura)
 - [Las capas](#las-capas)
 - [El resultado](#el-resultado)
 - [Cómo se usa](#cómo-se-usa)
 - [Estructura del repo](#estructura-del-repo)
 - [Problemas conocidos](#problemas-conocidos)
-
-## El problema
-
-Un portafolio junior típico enseña a instalar servicios, pero casi ninguno
-enseña la parte operativa que de verdad importa en producción: qué pasa cuando
-una máquina se cae, y cómo se recupera sin perder datos. "Configurar" está
-sobrerrepresentado; "respaldar y verificar" no lo está.
-
-## La solución
-
-Un hipervisor Proxmox real gestionado por código, con tres servicios que se
-hablan entre sí, backups a nivel de VM completa y un escenario de desastre que
-se provoca y se recupera a propósito para comprobar que la recuperación funciona.
-
-Todo el ciclo de vida (red, VMs, servicios, backups) está en Ansible y es
-idempotente. La recuperación está en dos scripts y un runbook.
 
 ## Arquitectura
 
@@ -76,8 +60,8 @@ registro de tareas con el ciclo `Parar → Destruir → Restaurar → Iniciar`.*
 | 3 · Backups | Job `vzdump` programado con retención | rol `backup` |
 | 4 · Desastre y restauración | Destruir una VM y recuperarla verificada | `scripts/disaster.sh`, `scripts/restore.sh` |
 
-La estrella es la capa 4. Las demás existen para que haya algo real que romper
-y recuperar.
+Las capas 0 a 3 existen para que la capa 4 tenga algo real que romper y
+recuperar.
 
 ![Capa 0 · red interna vmbr1](docs/capturas/02-red-vmbr1.png)
 
@@ -104,8 +88,8 @@ RESTORE  → backup restaurado → arranca → SSH OK en 12s
            Samba:    active           ✓
 ```
 
-Una VM borrada y devuelta a la vida con los datos de usuario intactos, todo
-comprobado por el propio script:
+La VM se borra entera, se restaura y el propio script comprueba que los datos
+de usuario siguen intactos:
 
 ![Capa 4 · el desastre](docs/capturas/05-desastre-restauracion-1.png)
 
@@ -116,8 +100,7 @@ comprobado por el propio script:
 *`restore.sh` la recupera y verifica: arranca, recupera la IP, los datos siguen
 intactos y Samba vuelve a estar activo.*
 
-Y todo el ciclo de vida es idempotente. Relanzar el playbook completo no cambia
-nada:
+Relanzar el playbook completo no cambia nada:
 
 ![Idempotencia · changed=0](docs/capturas/06-idempotencia.png)
 
@@ -167,14 +150,14 @@ proxmox-backup-lab/
 
 ## Problemas conocidos
 
-- **Puente de red de VMware Workstation.** En modo automático puentea por la
+- En modo automático, el puente de red de VMware Workstation puentea por la
   primera tarjeta candidata, que puede no ser la física. Hubo que dejar el
   "VMware Bridge Protocol" activo solo en la NIC real para que Proxmox tuviera
   red. Si un día el nodo pierde conectividad, es lo primero que miro.
-- **`group_vars/all/` es un directorio, no un fichero.** Un `group_vars/secrets.yml`
+- `group_vars/all/` es un directorio, no un fichero. Un `group_vars/secrets.yml`
   suelto no se carga (Ansible espera un nombre de grupo). Las variables y los
   secretos van dentro de `group_vars/all/`.
-- **DNS de bootstrap.** Las VMs nacen con DNS público (1.1.1.1) para poder
-  instalar paquetes, y solo después se les apunta a `dns01`. Si se invierte el
+- Las VMs nacen con DNS público (1.1.1.1) para poder instalar paquetes durante
+  el bootstrap, y solo después se les apunta a `dns01`. Si se invierte el
   orden, el `apt` de los servicios falla.
 - Certificado de nginx autofirmado: el navegador avisa, es esperado en un lab.

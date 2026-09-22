@@ -1,7 +1,7 @@
 ---
-# Backups a nivel de VM completa con el sistema nativo de Proxmox (vzdump):
-# un job programado con retención y un primer backup para dejar constancia de
-# que funciona. Es lo que se usaría en producción.
+# Backups a nivel de VM completa con el sistema nativo de Proxmox (vzdump), el
+# mismo que se usaría en producción: un job programado con retención y un
+# primer backup para dejar constancia de que funciona.
 
 - name: Comprobar que el almacenamiento admite backups
   ansible.builtin.command: pvesm status --storage {{ backup_storage }}

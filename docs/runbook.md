@@ -37,7 +37,7 @@ al SSH y comprueba hostname, IP, datos de usuario y servicio.
 > `ansible-playbook site.yml --tags backup` (el rol se autorrepara y vuelve a
 > incluir la VM en el job).
 
-**A mano**, si se quiere control fino:
+A mano, si se quiere control fino:
 
 ```bash
 # 1. Backup más reciente de la VM:
@@ -82,7 +82,7 @@ zstd -d -c /var/lib/vz/dump/vzdump-qemu-113-FECHA.vma.zst | vma extract - /var/t
 ```
 
 Después, recuperar con el paso 1. Esta pareja disaster/restore es la prueba de
-que los backups sirven de verdad.
+que los backups sirven.
 
 ---
 

@@ -1,7 +1,7 @@
 #!/bin/bash
 # ===========================================================================
-# disaster.sh — provoca la pérdida. Destruye por completo una VM del lab
-# (la VM y sus discos), simulando un desastre real.
+# disaster.sh: destruye por completo una VM del lab (la VM y sus discos)
+# para simular un desastre real.
 #
 #   Uso:  ./disaster.sh [VMID]      (por defecto 113 = fs01, el fileserver)
 #

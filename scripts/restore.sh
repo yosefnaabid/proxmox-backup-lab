@@ -1,12 +1,11 @@
 #!/bin/bash
 # ===========================================================================
-# restore.sh — restaura una VM desde su backup más reciente y VERIFICA que
+# restore.sh: restaura una VM desde su backup más reciente y verifica que
 # vuelve a arrancar y que los datos de usuario siguen intactos.
 #
 #   Uso:  ./restore.sh [VMID] [IP]     (por defecto 113  10.10.10.13 = fs01)
 #
-# Se ejecuta en el nodo Proxmox (pve01). Es la contraparte de disaster.sh:
-# el sello "respaldar y verificar".
+# Se ejecuta en el nodo Proxmox (pve01). Es la contraparte de disaster.sh.
 # ===========================================================================
 set -euo pipefail
 
